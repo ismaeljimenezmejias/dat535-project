@@ -2,3 +2,4 @@
 Medallion architecture project dat535 
 Test: Trym push
 Test push from trfa2
+test: isma push
