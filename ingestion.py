@@ -1,25 +1,32 @@
 import json
 import pandas as pd
-from pathlib import Path
+from google.cloud import storage
 
-# === 1. Paths ===
-input_path = Path("/Users/trymfalkum/Desktop/DAT535/mental_health_unstructured_MESSY.jsonl")
-output_path = Path("mental_health_structured.csv")
+# === 1. Google Cloud Storage ===
+client = storage.Client()
+
+bucket_name = "medallion-dat535"
+blob_path = "bronce/raw/mental_health_unstructured.jsonl"
+
+bucket = client.bucket(bucket_name)
+blob = bucket.blob(blob_path)
+
+print("📥 Downloading JSONL from GCS...")
+content = blob.download_as_text(encoding="utf-8").split("\n")
 
 # === 2. Read JSONL ===
 records = []
-with open(input_path, "r", encoding="utf-8") as f:
-    for line in f:
-        try:
-            data = json.loads(line.strip())
-            records.append(data)
-        except json.JSONDecodeError:
-            print("❌ Error reading a JSON line, skipping...")
+for line in content:
+    if not line.strip():
+        continue
+    try:
+        records.append(json.loads(line.strip()))
+    except json.JSONDecodeError:
+        print("❌ Error reading a JSON line, skipping...")
 
 print(f"✅ Loaded {len(records)} records.")
 
 # === 3. Flatten structures ===
-# Each record contains nested sections: person / status / lifestyle
 flat_rows = []
 for r in records:
     person = r.get("person", {})
@@ -52,8 +59,16 @@ for r in records:
 df = pd.DataFrame(flat_rows)
 print(f"✅ DataFrame created with {df.shape[0]} rows and {df.shape[1]} columns.")
 
+# === 5. Save CSV locally ===
+output_csv = "mental_health_structured.csv"
+df.to_csv(output_csv, index=False, encoding="utf-8")
 
+print(f"💾 CSV saved locally as: {output_csv}")
 
-# === 5. Save as CSV ===
-df.to_csv(output_path, index=False, encoding="utf-8")
-print(f"💾 Structured dataset saved to: {output_path.resolve()}")
+# === 6. Upload structured CSV to GCS (Silver layer) ===
+silver_path = "silver/mental_health_structured.csv"
+silver_blob = bucket.blob(silver_path)
+
+silver_blob.upload_from_filename(output_csv)
+
+print(f"🚀 Uploaded structured CSV to GCS: {silver_path}")
