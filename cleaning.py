@@ -58,4 +58,4 @@ print(f"🏆 Uploaded cleaned CSV to GOLD layer: {gold_output_path}")
 
 # === 9. Preview ===
 print("\nPreview:")
-print(df_clean.head(5).to_markdown())
+print(df_clean.head(5).to_string())
