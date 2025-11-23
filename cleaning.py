@@ -71,3 +71,34 @@ print("Saved CSV dataset to GOLD layer.")
 # JSON
 df_clean.write.mode("overwrite").json(f"{gold_path}/mental_health_clean.json")
 print("Saved JSON dataset to GOLD layer.")
+
+
+# Comparing sizes 
+from google.cloud import storage
+
+# Inicializa cliente GCS
+client = storage.Client()
+
+# Nombre del bucket
+bucket_name = "medallion-dat535"
+bucket = client.bucket(bucket_name)
+
+# Carpeta GOLD a comparar
+folders = [
+    "gold/mental_health_clean.parquet/",
+    "gold/mental_health_clean.csv/",
+    "gold/mental_health_clean.json/"
+]
+
+def get_folder_size(bucket, folder):
+    """Devuelve tamaño total de todos los objetos en la carpeta en bytes."""
+    total_size = 0
+    blobs = client.list_blobs(bucket, prefix=folder)
+    for blob in blobs:
+        total_size += blob.size
+    return total_size
+
+for folder in folders:
+    size_bytes = get_folder_size(bucket, folder)
+    size_mb = size_bytes / (1024*1024)
+    print(f"{folder}: {size_bytes} bytes ({size_mb:.2f} MB)")
