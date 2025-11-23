@@ -14,15 +14,24 @@ blob = bucket.blob(blob_path)
 print("📥 Downloading JSONL from GCS...")
 content = blob.download_as_text(encoding="utf-8").split("\n")
 
-# === 2. Read JSONL ===
+# === 2. Read JSONL with metadata ===
 records = []
 for line in content:
     if not line.strip():
         continue
     try:
-        records.append(json.loads(line.strip()))
+        r = json.loads(line.strip())
+        r['_ingestion_timestamp'] = time.time()
+        r['_source'] = 'jsonl'
+        r['_status'] = 'valid'
+        records.append(r)
     except json.JSONDecodeError:
-        print("❌ Error reading a JSON line, skipping...")
+        records.append({
+            '_raw_data': line.strip(),
+            '_ingestion_timestamp': time.time(),
+            '_source': 'jsonl',
+            '_status': 'parse_error'
+        })
 
 print(f"✅ Loaded {len(records)} records.")
 
@@ -51,6 +60,9 @@ for r in records:
         "DaysIndoors": lifestyle.get("days_indoors"),
         "HabitsChange": lifestyle.get("habits_change"),
         "WorkInterest": lifestyle.get("work_interest"),
+        "_ingestion_timestamp": r.get("_ingestion_timestamp"),
+        "_source": r.get("_source"),
+        "_status": r.get("_status")
     }
 
     flat_rows.append(flat)

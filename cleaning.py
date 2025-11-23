@@ -52,7 +52,14 @@ rdd_merged = rdd_norm.map(merge_sw)
 total_rows = rdd_merged.count()
 print(f"RDD cleaned rows: {total_rows}")
 
-df_rdd_clean = rdd_merged.toDF().repartition(10)
+metadata_cols = ["_ingestion_timestamp", "_source", "_status", "_raw_data"]
+
+def drop_metadata(record):
+    return {k: v for k, v in record.items() if k not in metadata_cols}
+
+rdd_no_meta = rdd_merged.map(drop_metadata)
+
+df_rdd_clean = rdd_no_meta.toDF().repartition(10)
 
 # Guardar en GOLD con carpeta propia
 df_rdd_clean.write.mode("overwrite").parquet(f"{gold_path}/rdd/mental_health_clean.parquet")
@@ -65,6 +72,11 @@ print(f"✅ RDD cleaning completed in {time.time() - start_rdd:.2f} seconds.\n")
 start_df = time.time()
 
 df = spark.read.option("header", True).csv(silver_path)
+
+metadata_cols = ["_ingestion_timestamp", "_source", "_status", "_raw_data"]
+existing_metadata_cols = [c for c in metadata_cols if c in df.columns]
+if existing_metadata_cols:
+    df = df.drop(*existing_metadata_cols)
 
 for c in df.columns:
     df = df.filter((col(c).isNotNull()) & (col(c) != "") & (col(c) != "NULL"))
@@ -98,6 +110,8 @@ blob.download_to_filename("mental_health_structured.csv")
 
 df_pd = pd.read_csv("mental_health_structured.csv")
 df_pd_clean = df_pd.dropna()
+metadata_cols_pd = ["_ingestion_timestamp", "_source", "_status", "_raw_data"]
+df_pd_clean = df_pd_clean.drop(columns=[c for c in metadata_cols_pd if c in df_pd_clean.columns])
 
 text_cols_pd = df_pd_clean.select_dtypes(include="object").columns
 df_pd_clean[text_cols_pd] = df_pd_clean[text_cols_pd].apply(lambda x: x.str.title())
