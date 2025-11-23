@@ -68,6 +68,35 @@ df_rdd_clean.write.mode("overwrite").json(f"{gold_path}/rdd/mental_health_clean.
 
 print(f"✅ RDD cleaning completed in {time.time() - start_rdd:.2f} seconds.\n")
 
+# === Check SIZES of RDD outputs in GCS ===
+from google.cloud import storage
+
+# Inicializa cliente GCS
+client = storage.Client()
+bucket_name = "medallion-dat535"
+bucket = client.bucket(bucket_name)
+
+# Carpeta GOLD donde guardaste los resultados de RDD
+rdd_folders = [
+    "gold/rdd/mental_health_clean.parquet/",
+    "gold/rdd/mental_health_clean.csv/",
+    "gold/rdd/mental_health_clean.json/"
+]
+
+def get_folder_size(bucket, folder):
+    """Devuelve tamaño total de todos los objetos en la carpeta en bytes."""
+    total_size = 0
+    blobs = client.list_blobs(bucket, prefix=folder)
+    for blob in blobs:
+        total_size += blob.size
+    return total_size
+
+for folder in rdd_folders:
+    size_bytes = get_folder_size(bucket, folder)
+    size_mb = size_bytes / (1024*1024)
+    print(f"{folder}: {size_bytes} bytes ({size_mb:.2f} MB)")
+
+
 # === 2. Spark DataFrame approach ===
 start_df = time.time()
 
