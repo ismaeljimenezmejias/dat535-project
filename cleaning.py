@@ -1,61 +1,80 @@
-import pandas as pd
-from google.cloud import storage
+from pyspark import SparkContext
+import csv
+import io
 
-# === 1. Google Cloud Storage ===
-client = storage.Client()
-bucket_name = "medallion-dat535"
+# === 0. Spark ===
+sc = SparkContext(appName="MentalHealthCleaningRDD")
 
-# Paths
-silver_input_path = "silver/mental_health_structured.csv"
-silver_output_path = "silver/mental_health_clean.csv"
+# === 1. Read structured CSV from SILVER layer (GCS) ===
+silver_path = "gs://medallion-dat535/silver/mental_health_structured.csv"
 
-bucket = client.bucket(bucket_name)
+rdd = sc.textFile(silver_path)
+header = rdd.first()
+columns = header.split(",")
 
-# === 2. Load structured CSV from GCS ===
-blob_input = bucket.blob(silver_input_path)
-blob_input.download_to_filename("mental_health_structured.csv")
+rdd_rows = rdd.filter(lambda x: x != header)
 
-df = pd.read_csv("mental_health_structured.csv")
+# === 2. MAP: parse CSV to dict ===
+def parse_line(line):
+    reader = csv.reader(io.StringIO(line))
+    row = next(reader)
+    return dict(zip(columns, row))
 
-print(f"✅ Loaded structured CSV: {silver_input_path}")
+rdd_dict = rdd_rows.map(parse_line)
 
-# === 3. Null value summary ===
-null_counts = df.isnull().sum()
-total_rows = len(df)
+# === 3. FILTER: remove rows with nulls ===
+def no_nulls(record):
+    return all(v not in ("", None, "NULL") for v in record.values())
 
-print("\n=== Null Value Summary ===")
-for col, n in null_counts.items():
-    if n > 0:
-        print(f"{col}: {n} nulls ({n/total_rows:.2%})")
+rdd_nonull = rdd_dict.filter(no_nulls)
 
-# === 4. Remove all rows with any null value ===
-df_clean = df.dropna(how="any")
-print(f"\nRows before cleaning: {len(df)}")
-print(f"Rows after cleaning: {len(df_clean)}")
-print(f"Rows removed: {len(df)-len(df_clean)} ({(len(df)-len(df_clean))/len(df):.2%})")
+# === 4. MAP: Normalize text case ===
+def norm(record):
+    return {k: (v.title() if isinstance(v, str) else v) for k, v in record.items()}
 
-# === 5. Normalize text case ===
-text_cols = df_clean.select_dtypes(include="object").columns
-df_clean[text_cols] = df_clean[text_cols].apply(lambda x: x.str.title())
+rdd_norm = rdd_nonull.map(norm)
 
-# === 6. Drop redundant SocialWeaknessSecondary column if identical ===
-if "SocialWeaknessSecondary" in df_clean.columns:
-    if (df_clean["SocialWeaknessPrimary"] == df_clean["SocialWeaknessSecondary"]).all():
-        df_clean = df_clean.drop(columns=["SocialWeaknessSecondary"])
-        df_clean = df_clean.rename(columns={"SocialWeaknessPrimary": "SocialWeakness"})
-        print("✅ SocialWeaknessSecondary dropped and SocialWeaknessPrimary renamed.")
+# === 5. MAP: Merge SocialWeakness columns ===
+def merge_sw(r):
+    if ("SocialWeaknessPrimary" in r and
+        "SocialWeaknessSecondary" in r and
+        r["SocialWeaknessPrimary"] == r["SocialWeaknessSecondary"]):
+        
+        r["SocialWeakness"] = r["SocialWeaknessPrimary"]
+        del r["SocialWeaknessPrimary"]
+        del r["SocialWeaknessSecondary"]
+    return r
 
-# === 7. Save cleaned CSV locally ===
-df_clean.to_csv("mental_health_clean.csv", index=False, encoding="utf-8")
-print(f"💾 Cleaned CSV saved locally: mental_health_clean.csv")
+rdd_merged = rdd_norm.map(merge_sw)
 
-# === 8. Upload cleaned CSV to GCS (Gold layer) ===
-gold_output_path = "gold/mental_health_clean.csv"
-blob_output = bucket.blob(gold_output_path)
-blob_output.upload_from_filename("mental_health_clean.csv")
+# === 6. REDUCE: count rows ===
+total_rows = rdd_merged.map(lambda _: 1).reduce(lambda a, b: a + b)
+print(f"Total cleaned rows: {total_rows}")
 
-print(f"🏆 Uploaded cleaned CSV to GOLD layer: {gold_output_path}")
+# === 7. Convert dict -> CSV line ===
+def to_csv(record):
+    cols = [c for c in columns if c in record]
+    if "SocialWeakness" in record and "SocialWeakness" not in cols:
+        cols.append("SocialWeakness")
+    return ",".join(record[c] for c in cols)
 
-# === 9. Preview ===
-print("\nPreview:")
-print(df_clean.head(5).to_string())
+rdd_csv = rdd_merged.map(to_csv)
+
+# Add updated header
+final_columns = list(rdd_merged.first().keys())
+header_clean = ",".join(final_columns)
+rdd_csv = sc.parallelize([header_clean]).union(rdd_csv)
+
+# === 8. Save final CLEANED CSV to GOLD layer (GCS) ===
+gold_path = "gs://medallion-dat535/gold"
+
+
+rdd_csv.coalesce(1).saveAsTextFile(gold_path + "/csv")
+
+print("Saved csv cleaned dataset to GOLD layer:", gold_path + "/csv")
+
+rdd_df = rdd_merged.toDF()
+rdd_df.write.mode("overwrite").parquet(gold_path + "/parquet")
+
+print("Saved parquet cleaned dataset to GOLD layer:", gold_path + "/parquet")
+
