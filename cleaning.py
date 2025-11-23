@@ -1,24 +1,27 @@
 from pyspark import SparkContext
 from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, when
 import csv
 import io
 import time
+import pandas as pd
+from google.cloud import storage
 
 # === 0. Spark ===
-sc = SparkContext(appName="MentalHealthCleaningRDD")
-spark = SparkSession.builder.appName("MentalHealthCleaningRDD").getOrCreate()
+sc = SparkContext(appName="MentalHealthCleaning")
+spark = SparkSession.builder.appName("MentalHealthCleaning").getOrCreate()
 
-# === 1. Read structured CSV from SILVER layer (GCS) ===
 silver_path = "gs://medallion-dat535/silver/mental_health_structured.csv"
+gold_path = "gs://medallion-dat535/gold"
 
-start=time.time()
+# === 1. RDD approach ===
+start_rdd = time.time()
 
 rdd = sc.textFile(silver_path)
 header = rdd.first()
 columns = header.split(",")
 rdd_rows = rdd.filter(lambda x: x != header)
 
-# === 2. MAP: parse CSV to dict ===
 def parse_line(line):
     reader = csv.reader(io.StringIO(line))
     row = next(reader)
@@ -26,19 +29,16 @@ def parse_line(line):
 
 rdd_dict = rdd_rows.map(parse_line)
 
-# === 3. FILTER: remove rows with nulls ===
 def no_nulls(record):
     return all(v not in ("", None, "NULL") for v in record.values())
 
 rdd_nonull = rdd_dict.filter(no_nulls)
 
-# === 4. MAP: Normalize text case ===
 def norm(record):
     return {k: (v.title() if isinstance(v, str) else v) for k, v in record.items()}
 
 rdd_norm = rdd_nonull.map(norm)
 
-# === 5. MAP: Merge SocialWeakness columns ===
 def merge_sw(r):
     if ("SocialWeaknessPrimary" in r and
         "SocialWeaknessSecondary" in r and
@@ -49,69 +49,66 @@ def merge_sw(r):
     return r
 
 rdd_merged = rdd_norm.map(merge_sw)
-
-# === 6. REDUCE: count rows ===
 total_rows = rdd_merged.count()
-print(f"Total cleaned rows: {total_rows}")
+print(f"RDD cleaned rows: {total_rows}")
 
+df_rdd_clean = rdd_merged.toDF().repartition(10)
 
-# === 7. Convert dict -> DataFrame ===
-df_clean = rdd_merged.toDF()
+# Guardar en GOLD con carpeta propia
+df_rdd_clean.write.mode("overwrite").parquet(f"{gold_path}/rdd/mental_health_clean.parquet")
+df_rdd_clean.write.mode("overwrite").option("header", True).csv(f"{gold_path}/rdd/mental_health_clean.csv")
+df_rdd_clean.write.mode("overwrite").json(f"{gold_path}/rdd/mental_health_clean.json")
 
-# === 8. Repartition para archivos más manejables ===
-num_partitions = 10  # ajusta según tamaño de dataset y memoria
-df_clean = df_clean.repartition(num_partitions)
+print(f"✅ RDD cleaning completed in {time.time() - start_rdd:.2f} seconds.\n")
 
-# === 9. Save cleaned dataset to GOLD layer ===
-gold_path = "gs://medallion-dat535/gold"
+# === 2. Spark DataFrame approach ===
+start_df = time.time()
 
-# Parquet
-df_clean.write.mode("overwrite").parquet(f"{gold_path}/mental_health_clean.parquet")
-print("Saved Parquet dataset to GOLD layer.")
+df = spark.read.option("header", True).csv(silver_path)
 
-# CSV
-df_clean.write.mode("overwrite").option("header", True).csv(f"{gold_path}/mental_health_clean.csv")
-print("Saved CSV dataset to GOLD layer.")
+for c in df.columns:
+    df = df.filter((col(c).isNotNull()) & (col(c) != "") & (col(c) != "NULL"))
 
-# JSON
-df_clean.write.mode("overwrite").json(f"{gold_path}/mental_health_clean.json")
-print("Saved JSON dataset to GOLD layer.")
+text_cols = [f.name for f in df.schema.fields if str(f.dataType) == "StringType"]
+for c in text_cols:
+    df = df.withColumn(c, col(c).substr(1,1).upper() + col(c).substr(2, 1000))
 
+if "SocialWeaknessPrimary" in df.columns and "SocialWeaknessSecondary" in df.columns:
+    df = df.withColumn(
+        "SocialWeakness",
+        when(col("SocialWeaknessPrimary") == col("SocialWeaknessSecondary"), col("SocialWeaknessPrimary"))
+    ).drop("SocialWeaknessPrimary", "SocialWeaknessSecondary")
 
-print(f"Cleaning with RDD completed in {time.time() - start:.2f} seconds.")
+total_rows = df.count()
+print(f"Spark DF cleaned rows: {total_rows}")
 
-# Comparing sizes 
-from google.cloud import storage
+df.write.mode("overwrite").parquet(f"{gold_path}/spark_df/mental_health_clean.parquet")
+df.write.mode("overwrite").option("header", True).csv(f"{gold_path}/spark_df/mental_health_clean.csv")
+df.write.mode("overwrite").json(f"{gold_path}/spark_df/mental_health_clean.json")
 
-# Inicializa cliente GCS
+print(f"✅ Spark DataFrame cleaning completed in {time.time() - start_df:.2f} seconds.\n")
+
+# === 3. pandas approach ===
+start_pd = time.time()
+
 client = storage.Client()
+bucket = client.bucket("medallion-dat535")
+blob = bucket.blob("silver/mental_health_structured.csv")
+blob.download_to_filename("mental_health_structured.csv")
 
-# Nombre del bucket
-bucket_name = "medallion-dat535"
-bucket = client.bucket(bucket_name)
+df_pd = pd.read_csv("mental_health_structured.csv")
+df_pd_clean = df_pd.dropna()
 
-# Carpeta GOLD a comparar
-folders = [
-    "gold/mental_health_clean.parquet/",
-    "gold/mental_health_clean.csv/",
-    "gold/mental_health_clean.json/"
-]
+text_cols_pd = df_pd_clean.select_dtypes(include="object").columns
+df_pd_clean[text_cols_pd] = df_pd_clean[text_cols_pd].apply(lambda x: x.str.title())
 
-def get_folder_size(bucket, folder):
-    """Devuelve tamaño total de todos los objetos en la carpeta en bytes."""
-    total_size = 0
-    blobs = client.list_blobs(bucket, prefix=folder)
-    for blob in blobs:
-        total_size += blob.size
-    return total_size
+if "SocialWeaknessSecondary" in df_pd_clean.columns:
+    if (df_pd_clean["SocialWeaknessPrimary"] == df_pd_clean["SocialWeaknessSecondary"]).all():
+        df_pd_clean = df_pd_clean.drop(columns=["SocialWeaknessSecondary"])
+        df_pd_clean = df_pd_clean.rename(columns={"SocialWeaknessPrimary":"SocialWeakness"})
 
-for folder in folders:
-    size_bytes = get_folder_size(bucket, folder)
-    size_mb = size_bytes / (1024*1024)
-    print(f"{folder}: {size_bytes} bytes ({size_mb:.2f} MB)")
+df_pd_clean.to_csv("mental_health_clean_pandas.csv", index=False, encoding="utf-8")
+blob_out = bucket.blob("gold/pandas/mental_health_clean_pandas.csv")
+blob_out.upload_from_filename("mental_health_clean_pandas.csv")
 
-
-
-
-#DATAFRAME APPROACH
-# === Alternative: Using DataFrame API for cleaning ===
+print(f"✅ pandas cleaning completed in {time.time() - start_pd:.2f} seconds.\n")
