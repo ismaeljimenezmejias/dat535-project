@@ -80,7 +80,7 @@ rdd_df = rdd_merged.toDF()
 rdd_df = rdd_merged.toDF()
 
 # Reparticiona a 10 particiones
-rdd_df_small = rdd_df.repartition(10)
+rdd_df_small = rdd_df.repartition(50)
 
 # Guarda Parquet
 rdd_df_small.write.mode("overwrite").parquet(gold_path + "/mental_health_clean.parquet")
