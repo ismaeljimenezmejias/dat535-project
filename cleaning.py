@@ -1,55 +1,16 @@
 from pyspark import SparkContext
 from pyspark.sql import SparkSession
-import csv
-import io
 
+spark = SparkSession.builder \
+    .appName("MentalHealthCleaningRDD") \
+    .getOrCreate()
 
-# === 0. Spark ===
-# Setup and Import Required Libraries
-import time
-import json
-from collections import defaultdict
-from functools import reduce
-from typing import List, Tuple, Any
-import builtins
-import findspark
-
-findspark.init()
-
-# For Spark (will install if needed)
-try:
-    from pyspark.sql import SparkSession
-    from pyspark.sql.window import Window
-    from pyspark.sql.functions import *
-    import pyspark.sql.functions as F
-    from pyspark.sql.types import *
-    pyspark_available = True
-except ImportError:
-    print("PySpark not available. Install with: pip install pyspark")
-    pyspark_available = False
-
-print("Setup complete!")
-
-
-# Initialize Spark Session
-if pyspark_available:
-    spark = SparkSession.builder \
-        .appName("MentalHealthCleaningRDD") \
-        .config("spark.sql.adaptive.enabled", "true") \
-        .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
-        .getOrCreate()
-    
-    spark.sparkContext.setLogLevel("WARN")
-    print("Spark session initialized successfully!")
-    print(f"Spark version: {spark.version}")
-else:
-    print("Skipping Spark tasks - PySpark not available")
-    
+sc = spark.sparkContext
 
 # === 1. Read structured CSV from SILVER layer (GCS) ===
 silver_path = "gs://medallion-dat535/silver/mental_health_structured.csv"
 
-rdd = spark.sparkContext.textFile(silver_path)
+rdd = sc.textFile(silver_path)
 header = rdd.first()
 columns = header.split(",")
 
@@ -104,7 +65,7 @@ rdd_csv = rdd_merged.map(to_csv)
 # Add updated header
 final_columns = list(rdd_merged.first().keys())
 header_clean = ",".join(final_columns)
-rdd_csv = spark.sparkContext.parallelize([header_clean]).union(rdd_csv)
+rdd_csv = sc.parallelize([header_clean]).union(rdd_csv)
 
 # === 8. Save final CLEANED CSV to GOLD layer (GCS) ===
 gold_path = "gs://medallion-dat535/gold"
