@@ -113,14 +113,14 @@ gold_path = "gs://medallion-dat535/gold"
 rdd_df = rdd_merged.toDF()
 
 # Guarda Parquet en un único archivo
-rdd_df.coalesce(1).write.mode("overwrite").parquet(gold_path + "/mental_health_clean.parquet")
+rdd_df.write.mode("overwrite").parquet(gold_path + "/mental_health_clean.parquet")
 print("Saved parquet cleaned dataset to GOLD layer:", gold_path + "/mental_health_clean.parquet")
 
 # Guarda CSV en un único archivo
-rdd_df.coalesce(1).write.mode("overwrite").option("header", True).csv(gold_path + "/mental_health_clean.csv")
+rdd_df.write.mode("overwrite").option("header", True).csv(gold_path + "/mental_health_clean.csv")
 print("Saved csv cleaned dataset to GOLD layer:", gold_path + "/mental_health_clean.csv")
 
-rdd_df.coalesce(1).write.mode("overwrite").json(gold_path + "/mental_health_clean.json")
+rdd_df.write.mode("overwrite").json(gold_path + "/mental_health_clean.json")
 print("Saved json cleaned dataset to GOLD layer:", gold_path + "/mental_health_clean.json")
 
 # === 9. Print file sizes ===
