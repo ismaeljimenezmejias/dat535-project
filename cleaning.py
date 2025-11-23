@@ -49,7 +49,7 @@ else:
 # === 1. Read structured CSV from SILVER layer (GCS) ===
 silver_path = "gs://medallion-dat535/silver/mental_health_structured.csv"
 
-rdd = sc.textFile(silver_path)
+rdd = spark.sparkContext.textFile(silver_path)
 header = rdd.first()
 columns = header.split(",")
 
@@ -104,7 +104,7 @@ rdd_csv = rdd_merged.map(to_csv)
 # Add updated header
 final_columns = list(rdd_merged.first().keys())
 header_clean = ",".join(final_columns)
-rdd_csv = sc.parallelize([header_clean]).union(rdd_csv)
+rdd_csv = spark.sparkContext.parallelize([header_clean]).union(rdd_csv)
 
 # === 8. Save final CLEANED CSV to GOLD layer (GCS) ===
 gold_path = "gs://medallion-dat535/gold"
