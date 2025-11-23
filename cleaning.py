@@ -1,9 +1,11 @@
 from pyspark import SparkContext
+from pyspark.sql import SparkSession
 import csv
 import io
 
 # === 0. Spark ===
 sc = SparkContext(appName="MentalHealthCleaningRDD")
+spark = SparkSession.builder.appName("MentalHealthCleaningRDD").getOrCreate()
 
 # === 1. Read structured CSV from SILVER layer (GCS) ===
 silver_path = "gs://medallion-dat535/silver/mental_health_structured.csv"
@@ -66,15 +68,25 @@ header_clean = ",".join(final_columns)
 rdd_csv = sc.parallelize([header_clean]).union(rdd_csv)
 
 # === 8. Save final CLEANED CSV to GOLD layer (GCS) ===
-gold_path = "gs://medallion-dat535/gold"
 
 
-rdd_csv.coalesce(1).saveAsTextFile(gold_path + "/csv")
-
-print("Saved csv cleaned dataset to GOLD layer:", gold_path + "/csv")
-
+# Convierte RDD a DataFrame
 rdd_df = rdd_merged.toDF()
-rdd_df.write.mode("overwrite").parquet(gold_path + "/parquet")
 
-print("Saved parquet cleaned dataset to GOLD layer:", gold_path + "/parquet")
+# Guarda Parquet en un único archivo
+rdd_df.coalesce(1).write.mode("overwrite").parquet("gs://medallion-dat535/gold/mental_health_clean.parquet")
+
+# Guarda CSV en un único archivo
+rdd_df.coalesce(1).write.mode("overwrite").option("header", True).csv("gs://medallion-dat535/gold/mental_health_clean.csv")
+
+
+# gold_path = "gs://medallion-dat535/gold"
+# rdd_csv.coalesce(1).saveAsTextFile(gold_path + "/csv")
+
+# print("Saved csv cleaned dataset to GOLD layer:", gold_path + "/csv")
+
+# rdd_df = rdd_merged.toDF()
+# rdd_df.write.mode("overwrite").parquet(gold_path + "/parquet")
+
+# print("Saved parquet cleaned dataset to GOLD layer:", gold_path + "/parquet")
 
