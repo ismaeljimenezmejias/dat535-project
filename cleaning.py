@@ -2,6 +2,7 @@ from pyspark import SparkContext
 from pyspark.sql import SparkSession
 import csv
 import io
+import time
 
 # === 0. Spark ===
 sc = SparkContext(appName="MentalHealthCleaningRDD")
@@ -9,6 +10,9 @@ spark = SparkSession.builder.appName("MentalHealthCleaningRDD").getOrCreate()
 
 # === 1. Read structured CSV from SILVER layer (GCS) ===
 silver_path = "gs://medallion-dat535/silver/mental_health_structured.csv"
+
+start=time.time()
+
 rdd = sc.textFile(silver_path)
 header = rdd.first()
 columns = header.split(",")
@@ -50,6 +54,7 @@ rdd_merged = rdd_norm.map(merge_sw)
 total_rows = rdd_merged.count()
 print(f"Total cleaned rows: {total_rows}")
 
+
 # === 7. Convert dict -> DataFrame ===
 df_clean = rdd_merged.toDF()
 
@@ -72,6 +77,9 @@ print("Saved CSV dataset to GOLD layer.")
 df_clean.write.mode("overwrite").json(f"{gold_path}/mental_health_clean.json")
 print("Saved JSON dataset to GOLD layer.")
 
+
+
+print(f"Cleaning completed in {time.time() - start:.2f} seconds.")
 
 # Comparing sizes 
 from google.cloud import storage
