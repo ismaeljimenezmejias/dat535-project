@@ -3,9 +3,48 @@ from pyspark.sql import SparkSession
 import csv
 import io
 
+
 # === 0. Spark ===
-sc = SparkContext(appName="MentalHealthCleaningRDD")
-spark = SparkSession.builder.appName("MentalHealthCleaningRDD").getOrCreate()
+# Setup and Import Required Libraries
+import time
+import json
+from collections import defaultdict
+from functools import reduce
+from typing import List, Tuple, Any
+import builtins
+import findspark
+
+findspark.init()
+
+# For Spark (will install if needed)
+try:
+    from pyspark.sql import SparkSession
+    from pyspark.sql.window import Window
+    from pyspark.sql.functions import *
+    import pyspark.sql.functions as F
+    from pyspark.sql.types import *
+    pyspark_available = True
+except ImportError:
+    print("PySpark not available. Install with: pip install pyspark")
+    pyspark_available = False
+
+print("Setup complete!")
+
+
+# Initialize Spark Session
+if pyspark_available:
+    spark = SparkSession.builder \
+        .appName("MentalHealthCleaningRDD") \
+        .config("spark.sql.adaptive.enabled", "true") \
+        .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
+        .getOrCreate()
+    
+    spark.sparkContext.setLogLevel("WARN")
+    print("Spark session initialized successfully!")
+    print(f"Spark version: {spark.version}")
+else:
+    print("Skipping Spark tasks - PySpark not available")
+    
 
 # === 1. Read structured CSV from SILVER layer (GCS) ===
 silver_path = "gs://medallion-dat535/silver/mental_health_structured.csv"
@@ -68,25 +107,33 @@ header_clean = ",".join(final_columns)
 rdd_csv = sc.parallelize([header_clean]).union(rdd_csv)
 
 # === 8. Save final CLEANED CSV to GOLD layer (GCS) ===
-
+gold_path = "gs://medallion-dat535/gold"
 
 # Convierte RDD a DataFrame
 rdd_df = rdd_merged.toDF()
 
 # Guarda Parquet en un único archivo
-rdd_df.coalesce(1).write.mode("overwrite").parquet("gs://medallion-dat535/gold/mental_health_clean.parquet")
+rdd_df.coalesce(1).write.mode("overwrite").parquet(gold_path + "/mental_health_clean.parquet")
+print("Saved parquet cleaned dataset to GOLD layer:", gold_path + "/mental_health_clean.parquet")
 
 # Guarda CSV en un único archivo
-rdd_df.coalesce(1).write.mode("overwrite").option("header", True).csv("gs://medallion-dat535/gold/mental_health_clean.csv")
+rdd_df.coalesce(1).write.mode("overwrite").option("header", True).csv(gold_path + "/mental_health_clean.csv")
+print("Saved csv cleaned dataset to GOLD layer:", gold_path + "/mental_health_clean.csv")
 
+rdd_df.coalesce(1).write.mode("overwrite").json(gold_path + "/mental_health_clean.json")
+print("Saved json cleaned dataset to GOLD layer:", gold_path + "/mental_health_clean.json")
 
-# gold_path = "gs://medallion-dat535/gold"
-# rdd_csv.coalesce(1).saveAsTextFile(gold_path + "/csv")
+# === 9. Print file sizes ===
 
-# print("Saved csv cleaned dataset to GOLD layer:", gold_path + "/csv")
+def print_gcs_file_sizes(bucket_name, prefix):
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    
+    blobs = bucket.list_blobs(prefix=prefix)
+    for blob in blobs:
+        print(f"{blob.name} — {blob.size / (1024*1024):.2f} MB")
 
-# rdd_df = rdd_merged.toDF()
-# rdd_df.write.mode("overwrite").parquet(gold_path + "/parquet")
-
-# print("Saved parquet cleaned dataset to GOLD layer:", gold_path + "/parquet")
-
+# Ejemplo:
+bucket_name = "medallion-dat535"
+prefix = "gold/"
+print_gcs_file_sizes(bucket_name, prefix)
