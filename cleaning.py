@@ -78,8 +78,7 @@ df_clean.write.mode("overwrite").json(f"{gold_path}/mental_health_clean.json")
 print("Saved JSON dataset to GOLD layer.")
 
 
-
-print(f"Cleaning completed in {time.time() - start:.2f} seconds.")
+print(f"Cleaning with RDD completed in {time.time() - start:.2f} seconds.")
 
 # Comparing sizes 
 from google.cloud import storage
@@ -110,3 +109,9 @@ for folder in folders:
     size_bytes = get_folder_size(bucket, folder)
     size_mb = size_bytes / (1024*1024)
     print(f"{folder}: {size_bytes} bytes ({size_mb:.2f} MB)")
+
+
+
+
+#DATAFRAME APPROACH
+# === Alternative: Using DataFrame API for cleaning ===
