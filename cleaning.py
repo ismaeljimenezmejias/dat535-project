@@ -18,6 +18,9 @@ rdd_rows = rdd.filter(lambda x: x != header)
 
 # === 2. MAP: parse CSV to dict ===
 def parse_line(line):
+    
+    import csv
+    import io
     reader = csv.reader(io.StringIO(line))
     row = next(reader)
     return dict(zip(columns, row))
