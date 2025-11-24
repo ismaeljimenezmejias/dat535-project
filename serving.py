@@ -6,7 +6,8 @@ spark = SparkSession.builder.appName("UseCase1_RDD").getOrCreate()
 df = spark.read.parquet("gs://medallion-dat535/gold/rdd/mental_health_clean.parquet")
 
 # Convertimos el DF a RDD
-rdd = df.rdd
+rdd_big = df.rdd.repartition(4).cache() 
+rdd = rdd_big.sample(False, 0.05, seed=42)
 
 print("\n========== USE CASE 1 (RDD ONLY) ==========\n")
 start = time.time()
@@ -27,7 +28,8 @@ results = {}
 for col in categorical_cols:
     # (category_value, isHighStress)
     pairs = rdd.map(lambda row: (getattr(row, col), 1 if row["IncreasingStress"] == "High" else 0))
-
+    pairs = pairs.coalesce(4)   
+    
     # (category_value, (sumHigh, count))
     stats = pairs.aggregateByKey(
         (0, 0),
