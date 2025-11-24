@@ -13,7 +13,7 @@ df.createOrReplaceTempView("mental_health")
 
 # Convert DF to RDD and cache it
 rdd = df.rdd.repartition(4).cache()
-rdd = rdd.sample(False, 0.05, seed=42)
+rdd = rdd.sample(False, 0.01, seed=42)
 
 print("\n========== USE CASE 1 (RDD ONLY) ==========\n")
 start = time.time()
@@ -225,10 +225,14 @@ sql_selfemp = spark.sql("""
 
 time_sql = time.time() - start_sql
 
+# Mostrar todas las vistas temporales registradas
+spark.catalog.listTables()
+
+
 # ============================
 # Print execution times
 # ============================
 print("\n=== Execution times (seconds) ===")
-print(f"RDD total time: {time.time() - start:.2f}\n")
+print(f"RDD total time: {time.time() - start:.2f}")
 print(f"DataFrame API total time: {time_df:.2f}")
-print(f"SQL total time: {time_sql:.2f}")
+print(f"SQL total time: {time_sql:.2f}\n")
