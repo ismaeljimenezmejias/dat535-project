@@ -39,7 +39,8 @@ for col in categorical_cols:
     proportions = stats.mapValues(lambda x: x[0] / x[1] if x[1] > 0 else 0)
 
     # best category = max proportion of High Stress
-    best = proportions.max(key=lambda x: x[1])
+    best = proportions.reduce(lambda a, b: a if a[1] > b[1] else b)
+
     results[col] = best
 
 print("=== Factor con mayor asociación con HIGH stress ===")
