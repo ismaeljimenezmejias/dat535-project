@@ -1,4 +1,6 @@
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import Window
 import time
 
 # -----------------------------
@@ -227,6 +229,6 @@ time_sql = time.time() - start_sql
 # Print execution times
 # ============================
 print("\n=== Execution times (seconds) ===")
-ºprint(f"RDD total time: {time.time() - start:.2f}\n")
+print(f"RDD total time: {time.time() - start:.2f}\n")
 print(f"DataFrame API total time: {time_df:.2f}")
 print(f"SQL total time: {time_sql:.2f}")
