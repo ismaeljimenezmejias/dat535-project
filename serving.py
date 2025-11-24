@@ -5,7 +5,7 @@ from pyspark.ml import Pipeline
 spark = SparkSession.builder.appName("GoldLayerTransformations").getOrCreate()
 
 # Load SILVER parquet
-silver_path = "gs://medallion-dat535/silver/mental_health_clean.parquet"
+silver_path = "gs://medallion-dat535/gold/rdd/mental_health_clean.parquet"
 df = spark.read.parquet(silver_path)
 
 # List of categorical columns you want numeric
@@ -30,7 +30,7 @@ pipeline = Pipeline(stages=indexers)
 df_gold = pipeline.fit(df).transform(df)
 
 # Save the GOLD output
-gold_path = "gs://medallion-dat535/gold/mental_health_indexed.parquet"
+gold_path = "gs://medallion-dat535/gold/rdd/mental_health_indexed.parquet"
 df_gold.write.mode("overwrite").parquet(gold_path)
 
 print("Gold layer created with categorical → numeric encoding.")
@@ -39,7 +39,7 @@ print("Gold layer created with categorical → numeric encoding.")
 
 # RRD VERSION
 
-df = spark.read.parquet("gs://medallion-dat535/gold/mental_health_indexed.parquet")
+df = spark.read.parquet("gs://medallion-dat535/gold/rdd/mental_health_indexed.parquet")
 
 print("\n================= RDD VERSION =================\n")
 start_rdd = time.time()
