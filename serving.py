@@ -1,49 +1,19 @@
 from pyspark.sql import SparkSession
-from pyspark.ml.feature import StringIndexer
-from pyspark.ml import Pipeline
+from pyspark.sql.functions import avg, count
+import time
+import builtins
 
-spark = SparkSession.builder.appName("GoldLayerTransformations").getOrCreate()
+spark = SparkSession.builder.appName("GoldLayerQueries").getOrCreate()
 
-# Load SILVER parquet
+# Load SILVER parquet (directly, no encoding)
 silver_path = "gs://medallion-dat535/gold/rdd/mental_health_clean.parquet"
 df = spark.read.parquet(silver_path)
 
-# List of categorical columns you want numeric
-categorical_cols = [
-    "Country",
-    "SocialWeakness",
-    "Gender",
-    "WorkEnvironment",
-    "SleepQuality",
-    "PhysicalActivity",
-    "DietQuality",
-    "FinancialStress",
-]
-
-# Create indexers
-indexers = [
-    StringIndexer(inputCol=col, outputCol=f"{col}_idx", handleInvalid="keep")
-    for col in categorical_cols
-]
-
-pipeline = Pipeline(stages=indexers)
-df_gold = pipeline.fit(df).transform(df)
-
-# Save the GOLD output
-gold_path = "gs://medallion-dat535/gold/rdd/mental_health_indexed.parquet"
-df_gold.write.mode("overwrite").parquet(gold_path)
-
-print("Gold layer created with categorical → numeric encoding.")
-
-
-
-# RRD VERSION
-
-df = spark.read.parquet("gs://medallion-dat535/gold/rdd/mental_health_indexed.parquet")
-
+# ================= RDD VERSION =================
 print("\n================= RDD VERSION =================\n")
 start_rdd = time.time()
 
+# Filter out rows with null IncreasingStress
 rdd = df.rdd.filter(lambda row: row["IncreasingStress"] is not None)
 
 # ---------- COUNTRY ----------
@@ -79,8 +49,7 @@ for sw, stats in sw_stats:
 print(f"\nRDD completed in {time.time() - start_rdd:.2f} seconds.")
 
 
-
-# DATAFRAME VERSION
+# ================= DATAFRAME VERSION =================
 print("\n================= DATAFRAME VERSION =================\n")
 start_df = time.time()
 
@@ -90,7 +59,7 @@ df_country = df.groupBy("Country").agg(
 ).orderBy("avg_stress", ascending=False)
 
 print("DataFrame — Average Stress per Country:")
-df_country.show()
+df_country.show(truncate=False)
 
 df_sw = df.groupBy("SocialWeakness").agg(
     avg("IncreasingStress").alias("avg_stress"),
@@ -98,11 +67,12 @@ df_sw = df.groupBy("SocialWeakness").agg(
 ).orderBy("avg_stress", ascending=False)
 
 print("DataFrame — Stress per Social Weakness:")
-df_sw.show()
+df_sw.show(truncate=False)
 
 print(f"\nDataFrame completed in {time.time() - start_df:.2f} seconds.")
 
-# SQL Version
+
+# ================= SQL VERSION =================
 print("\n================= SQL VERSION =================\n")
 start_sql = time.time()
 
@@ -118,7 +88,7 @@ sql_country = spark.sql("""
 """)
 
 print("SQL — Average Stress per Country:")
-sql_country.show()
+sql_country.show(truncate=False)
 
 sql_sw = spark.sql("""
     SELECT SocialWeakness,
@@ -130,8 +100,6 @@ sql_sw = spark.sql("""
 """)
 
 print("SQL — Stress per Social Weakness:")
-sql_sw.show()
+sql_sw.show(truncate=False)
 
 print(f"\nSQL completed in {time.time() - start_sql:.2f} seconds.")
-
-
