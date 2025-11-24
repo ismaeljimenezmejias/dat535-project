@@ -28,9 +28,8 @@ categorical_cols = [
 results = {}
 
 # Ver qué valores hay realmente
-rdd.map(lambda r: r["IncreasingStress"]).distinct().collect()
-
-
+vals = rdd.map(lambda r: r["IncreasingStress"]).distinct().collect()
+print(vals)
 
 for col in categorical_cols:
     # (category_value, isHighStress)
