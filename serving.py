@@ -1,13 +1,15 @@
 from pyspark.sql import SparkSession
 import time
 
+# -----------------------------
+# Configuración de Spark
+# -----------------------------
 spark = SparkSession.builder.appName("UseCase1_RDD").getOrCreate()
 
 df = spark.read.parquet("gs://medallion-dat535/gold/rdd/mental_health_clean.parquet")
 
-# Convertimos el DF a RDD
-rdd = df.rdd.repartition(4).cache() 
-# rdd = rdd_big.sample(False, 0.05, seed=42)
+# Convertimos el DF a RDD y cacheamos
+rdd = df.rdd.repartition(4).cache()
 
 print("\n========== USE CASE 1 (RDD ONLY) ==========\n")
 start = time.time()
@@ -27,9 +29,11 @@ results = {}
 
 for col in categorical_cols:
     # (category_value, isHighStress)
-    pairs = rdd.map(lambda row: (getattr(row, col), 1 if row["IncreasingStress"] == "High" else 0))
-    pairs = pairs.coalesce(4)   
-    
+    pairs = rdd.map(lambda row: (
+        row[col],
+        1 if row["IncreasingStress"].strip().lower() == "high" else 0
+    )).filter(lambda x: x[0] is not None)  # eliminamos nulos
+
     # (category_value, (sumHigh, count))
     stats = pairs.aggregateByKey(
         (0, 0),
@@ -37,10 +41,10 @@ for col in categorical_cols:
         lambda acc1, acc2: (acc1[0] + acc2[0], acc1[1] + acc2[1])
     )
 
-    # proportion of "High" per category
+    # proporción de "High" por categoría
     proportions = stats.mapValues(lambda x: x[0] / x[1] if x[1] > 0 else 0)
 
-    # best category = max proportion of High Stress
+    # categoría con mayor proporción de High Stress
     best = proportions.reduce(lambda a, b: a if a[1] > b[1] else b)
 
     results[col] = best
@@ -49,13 +53,11 @@ print("=== Factor con mayor asociación con HIGH stress ===")
 for col, (category, prop) in results.items():
     print(f"{col}: '{category}' → {prop:.2f}")
 
-
-
 # ============================
 # B) Agrupación por país
 # ============================
 
-country_pairs = rdd.map(lambda r: (r["Country"], r["IncreasingStress"]))
+country_pairs = rdd.map(lambda r: (r["Country"], r["IncreasingStress"])).filter(lambda x: x[0] is not None)
 
 def count_categories(acc, v):
     acc[v] = acc.get(v, 0) + 1
@@ -77,7 +79,5 @@ for country, stats in country_stats:
     total = sum(stats.values())
     proportions = {k: v / total for k, v in stats.items()}
     print(f"{country}: {proportions}")
-
-
 
 print(f"\nRDD Use Case 1 completed in {time.time() - start:.2f} seconds.\n")
