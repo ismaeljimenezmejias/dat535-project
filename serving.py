@@ -6,8 +6,8 @@ spark = SparkSession.builder.appName("UseCase1_RDD").getOrCreate()
 df = spark.read.parquet("gs://medallion-dat535/gold/rdd/mental_health_clean.parquet")
 
 # Convertimos el DF a RDD
-rdd_big = df.rdd.repartition(4).cache() 
-rdd = rdd_big.sample(False, 0.05, seed=42)
+rdd = df.rdd.repartition(4).cache() 
+# rdd = rdd_big.sample(False, 0.05, seed=42)
 
 print("\n========== USE CASE 1 (RDD ONLY) ==========\n")
 start = time.time()
