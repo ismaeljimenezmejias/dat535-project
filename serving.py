@@ -13,7 +13,7 @@ df.createOrReplaceTempView("mental_health")
 
 # Convert DF to RDD and cache it
 rdd = df.rdd.repartition(4).cache()
-rdd = rdd.sample(False, 0.01, seed=42)
+# rdd = rdd.sample(False, 0.01, seed=42)
 
 print("\n========== USE CASE 1 (RDD ONLY) ==========\n")
 start = time.time()
@@ -28,10 +28,14 @@ categorical_cols = [
     "MentalHealthInterview", "CareOptions"
 ]
 
+
+
+# # Check the actual values
+# vals = rdd.map(lambda r: r["IncreasingStress"]).distinct().collect()
+# print("Unique values of IncreasingStress:", vals)
+
+
 results = {}
-# Check the actual values
-vals = rdd.map(lambda r: r["IncreasingStress"]).distinct().collect()
-print("Unique values of IncreasingStress:", vals)
 
 for col in categorical_cols:
     # (category_value, isHighStress)
