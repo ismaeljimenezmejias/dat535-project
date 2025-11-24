@@ -35,7 +35,7 @@ for col in categorical_cols:
     # (category_value, isHighStress)
     pairs = rdd.map(lambda row: (
         row[col],
-        1 if row["IncreasingStress"].strip().lower() == "high" else 0
+        1 if row["IncreasingStress"].strip().lower() == "Yes" else 0
     )).filter(lambda x: x[0] is not None)  # eliminamos nulos
 
     # (category_value, (sumHigh, count))
