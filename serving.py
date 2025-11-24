@@ -1,17 +1,46 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, avg, count
-import time
-import builtins
+from pyspark.ml.feature import StringIndexer
+from pyspark.ml import Pipeline
 
-spark = SparkSession.builder.appName("GoldLayerQueries").getOrCreate()
+spark = SparkSession.builder.appName("GoldLayerTransformations").getOrCreate()
 
-gold_parquet = "gs://medallion-dat535/gold/rdd/mental_health_clean.parquet"
-df_gold = spark.read.parquet(gold_parquet)
+# Load SILVER parquet
+silver_path = "gs://medallion-dat535/silver/mental_health_clean.parquet"
+df = spark.read.parquet(silver_path)
 
-df = df_gold.select("Country", "SocialWeakness", "IncreasingStress")
+# List of categorical columns you want numeric
+categorical_cols = [
+    "Country",
+    "SocialWeakness",
+    "Gender",
+    "WorkEnvironment",
+    "SleepQuality",
+    "PhysicalActivity",
+    "DietQuality",
+    "FinancialStress",
+]
+
+# Create indexers
+indexers = [
+    StringIndexer(inputCol=col, outputCol=f"{col}_idx", handleInvalid="keep")
+    for col in categorical_cols
+]
+
+pipeline = Pipeline(stages=indexers)
+df_gold = pipeline.fit(df).transform(df)
+
+# Save the GOLD output
+gold_path = "gs://medallion-dat535/gold/mental_health_indexed.parquet"
+df_gold.write.mode("overwrite").parquet(gold_path)
+
+print("Gold layer created with categorical → numeric encoding.")
+
 
 
 # RRD VERSION
+
+df = spark.read.parquet("gs://medallion-dat535/gold/mental_health_indexed.parquet")
+
 print("\n================= RDD VERSION =================\n")
 start_rdd = time.time()
 
