@@ -150,8 +150,18 @@ if "SocialWeaknessSecondary" in df_pd_clean.columns:
         df_pd_clean = df_pd_clean.drop(columns=["SocialWeaknessSecondary"])
         df_pd_clean = df_pd_clean.rename(columns={"SocialWeaknessPrimary":"SocialWeakness"})
 
+# Saving the cleaned data in different formats
+# CSV 
 df_pd_clean.to_csv("mental_health_clean_pandas.csv", index=False, encoding="utf-8")
-blob_out = bucket.blob("gold/pandas/mental_health_clean_pandas.csv")
-blob_out.upload_from_filename("mental_health_clean_pandas.csv")
+
+# Parquet
+df_pd_clean.to_parquet("mental_health_clean_pandas.parquet", index=False)
+blob_parquet = bucket.blob("gold/pandas/mental_health_clean_pandas.parquet")
+blob_parquet.upload_from_filename("mental_health_clean_pandas.parquet")
+
+# JSON
+df_pd_clean.to_json("mental_health_clean_pandas.json", orient="records", lines=True)
+blob_json = bucket.blob("gold/pandas/mental_health_clean_pandas.json")
+blob_json.upload_from_filename("mental_health_clean_pandas.json")
 
 print(f"✅ pandas cleaning completed in {time.time() - start_pd:.2f} seconds.\n")
